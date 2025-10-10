@@ -5,11 +5,12 @@
 #            libnorm_type: Default to "libnorm" for 1E6 normalization.
 #            transformation: Default to "remove0", "libnorm", "log2p1", "qnorm" in order.
 #            save_dir: Folder path for saving output files.
+#            datasetName_full: the file name, default to "Count_matrix" + region type.
 #            save_each_step: Whether save each step, default to TRUE.
 #            do_qc: Whether to perform quality control filtering on BAM files.
 #            qc_filtered_percentile: Percentile threshold for QC filtering.
 # Output: None (saves count matrix and transformed data to files).
-count_matrix_function_with_qc <- function(bam_path, regions, libnorm_type = "libnorm", transformation = c("remove0", "libnorm", "log2p1", "qnorm"), save_each_step = TRUE, save_dir, do_qc = FALSE, qc_filtered_percentile = 0.25) {
+count_matrix_function_with_qc <- function(bam_path, regions, libnorm_type = "libnorm", apply_transformation = TRUE, transformations = NULL, save_each_step = TRUE, save_dir, datasetName_full = NULL, do_qc = FALSE, qc_filtered_percentile = 0.25) {
   # Create folder
   if (!dir.exists(save_dir)) {
     dir.create(save_dir, recursive = TRUE)
@@ -194,12 +195,14 @@ count_matrix_function_with_qc <- function(bam_path, regions, libnorm_type = "lib
 
   binChriDataframe_full = as.data.frame(do.call(rbind, binChriDataframe_list))
 
-  if (is.numeric(regions)) {
-    datasetName_full <- paste0("Count_Matrix_", BINSIZE)
-  } else if (is.character(regions)) {
-    ext <- tools::file_ext(regions)
-    add <- ext[1]
-    datasetName_full <- paste0("Count_Matrix_", add)
+  if (is.null(datasetName_full)) {
+    if (is.numeric(regions)) {
+      datasetName_full <- paste0("Count_Matrix_", BINSIZE)
+    } else if (is.character(regions)) {
+      ext <- tools::file_ext(regions)
+      add <- ext[1]
+      datasetName_full <- paste0("Count_Matrix_", add)
+    }
   }
 
   # Report
@@ -223,9 +226,12 @@ count_matrix_function_with_qc <- function(bam_path, regions, libnorm_type = "lib
   print(c("col2idx time taken: ", col2idx_time_taken))
 
   # Transformation
-  rownames(binChriDataframe_full) <- NULL
-  binChriDataframe_full = column_to_rownames(binChriDataframe_full, var=pos_colname)
-  binChriDataframe_full <- binChriDataframe_full
+  if (apply_transformation == TRUE) {
+    rownames(binChriDataframe_full) <- NULL
+    binChriDataframe_full = column_to_rownames(binChriDataframe_full, var=pos_colname)
+    binChriDataframe_full <- binChriDataframe_full
 
-  apply_transformations(df = binChriDataframe_full, libnorm_type1 = libnorm_type, transformations = transformation, save_each_step = save_each_step, save_dir = save_dir, datasetName_full = datasetName_full)
+    apply_transformations(df = binChriDataframe_full, libnorm_type1 = libnorm_type, transformations = transformations, save_each_step = save_each_step, save_dir = save_dir, datasetName_full = datasetName_full)
+  }
+
 }

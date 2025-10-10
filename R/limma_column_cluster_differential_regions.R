@@ -1,9 +1,10 @@
+# Differential Analysis
 # differential -1
 # two condition, 4 columns
 # Post: Perform differential analysis between two conditions using limma-voom pipeline, analyzing each column cluster separately to identify significantly different genomic regions.
 # Parameter: sample_names: Vector of sample names in order (first rep1 samples for condition1, then rep2 samples for condition2)
-#            rep1: Number of replicates in condition 1 (minimum 2)
-#            rep2: Number of replicates in condition 2 (minimum 2)
+#            rep1: Number of replicates in condition 1 (minimum 2) --- case_num
+#            rep2: Number of replicates in condition 2 (minimum 2) --- control_num
 #            col_cluster_file: Path to column cluster assignment TSV file
 #            wgc_file_path: Vector of paths to count matrix feather files for each sample
 #            sig_result_dir: Directory to save differential analysis results
@@ -15,7 +16,7 @@
 #            mean_per_thres_list: Vector of mean expression percentile thresholds for filtering (default: c(0.25))
 #            fdr_thres_list: Vector of FDR thresholds for significance calling (default: c(0.25))
 # Output: Saves differential analysis results, filtered count matrices, and significant regions for each cluster and threshold combination
-limma_column_cluster_differential_regions <- function(sample_names, rep1, rep2, col_cluster_file, wgc_file_path, sig_result_dir, pseudocount = 0.5, normalization_factor = 1E6, pseudocount_for_log = 1, lowess_span = 0.5, l2fc_thres = 0.5, mean_per_thres_list = c(0.25), fdr_thres_list = c(0.25)) { # cluster
+limma_column_cluster_differential_regions <- function(sample_names, rep1, rep2, col_cluster_file = NULL, wgc_file_path, sig_result_dir, normalization_factor = 1E6, lowess_span = 0.5, l2fc_thres = 0.5, mean_per_thres_list = c(0.25), fdr_thres_list = c(0.25)) { # cluster
 
   if(rep1 < 2 || rep2 < 2){
     stop("Each condition must have at least 2 replicates.")
@@ -35,7 +36,6 @@ limma_column_cluster_differential_regions <- function(sample_names, rep1, rep2, 
     library(limma)
   })
 
-  # Create sample information
   group1 <- sample_names[1:rep1]
   group2 <- sample_names[(rep1+1):(rep1+rep2)]
   conditions <- c(rep("condition1", rep1), rep("condition2", rep2))
@@ -44,17 +44,62 @@ limma_column_cluster_differential_regions <- function(sample_names, rep1, rep2, 
   condition_levels <- levels(group)
   mm <- model.matrix(~0 + group)
 
-  # Load column cluster file
-  col_cluster <- read.table(col_cluster_file, header = TRUE, sep = "\t", row.names = NULL)
-  col_label_list <- unique(col_cluster$label)
-
-  # Load WGC matrices into a list
   wgc_list <- lapply(wgc_file_path, function(f) column_to_rownames(read_feather(f), var = "pos"))
   names(wgc_list) <- sample_names
+
+  # Check if all WGC files have matching column names
+  all_colnames <- lapply(wgc_list, colnames)
+  all_colnames_sorted <- lapply(all_colnames, sort)
+  colnames_strings <- sapply(all_colnames_sorted, paste, collapse = "|")
+
+  if (length(unique(colnames_strings)) > 1) {
+    mismatch_info <- c()
+    for (i in 1:(length(all_colnames) - 1)) {
+      for (j in (i + 1):length(all_colnames)) {
+        if (!identical(all_colnames_sorted[[i]], all_colnames_sorted[[j]])) {
+          mismatch_info <- c(mismatch_info,
+                             paste0("  File ", i, " (", sample_names[i], ") vs File ", j, " (", sample_names[j], ")"))
+        }
+      }
+    }
+    stop("Column names do not match across WGC files:\n", paste(unique(mismatch_info), collapse = "\n"))
+  }
+
+  # Handle column cluster file
+  if (is.null(col_cluster_file)) {
+    # Get all unique column names from all WGC files
+    all_features <- unique(unlist(lapply(wgc_list, colnames)))
+    # Create a data frame where each feature gets its own label
+    col_cluster <- data.frame(
+      feature = all_features,
+      label = seq_along(all_features),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    # Load column cluster file
+    col_cluster <- read.table(col_cluster_file, header = TRUE, sep = "\t", row.names = NULL)
+  }
+
+  # Check intersection between WGC columns and col_cluster features
+  wgc_cols <- colnames(wgc_list[[1]])
+  cluster_features <- col_cluster$feature
+
+  wgc_not_in_cluster <- setdiff(wgc_cols, cluster_features)
+  cluster_not_in_wgc <- setdiff(cluster_features, wgc_cols)
+
+  if (length(wgc_not_in_cluster) > 0) {
+    warning("WGC files contain ", length(wgc_not_in_cluster), " column(s) not found in col_cluster file")
+  }
+
+  if (length(cluster_not_in_wgc) > 0) {
+    warning("col_cluster file contains ", length(cluster_not_in_wgc), " feature(s) not found in WGC files")
+  }
 
   dir.create(sig_result_dir, recursive = TRUE, showWarnings = FALSE)
 
   # Loop over column clusters
+  col_cluster <- col_cluster[col_cluster$feature %in% wgc_cols, ]
+  col_label_list <- unique(col_cluster$label)
   for (col_label in col_label_list) {
     target_pair_select_list <- col_cluster[col_cluster$label == col_label, "feature"]
 
@@ -65,10 +110,22 @@ limma_column_cluster_differential_regions <- function(sample_names, rep1, rep2, 
     )
     colnames(tmp_combine_orig) <- sample_names
 
-    # Keep rows with at least one group fully nonzero
-    group1_w_zero_boolean <- rowSums(tmp_combine_orig[, group1] == 0) == 0
-    group2_w_zero_boolean <- rowSums(tmp_combine_orig[, group2] == 0) == 0
-    tmp_combine <- tmp_combine_orig[group1_w_zero_boolean | group2_w_zero_boolean, ]
+    # Keep rows with at least one group meeting both conditions:
+    # Count non-zero replicates per group for each region
+    group1_nonzero_count <- rowSums(tmp_combine_orig[, group1] != 0)
+    group2_nonzero_count <- rowSums(tmp_combine_orig[, group2] != 0)
+
+    # Condition a: more than 50% non-zero in at least one group
+    group1_has_majority <- group1_nonzero_count > (rep1 * 0.5)
+    group2_has_majority <- group2_nonzero_count > (rep2 * 0.5)
+
+    # Condition b: at least 2 non-zero in at least one group
+    group1_has_min2 <- group1_nonzero_count >= 2
+    group2_has_min2 <- group2_nonzero_count >= 2
+
+    keep_rows <- (group1_has_majority & group1_has_min2) | (group2_has_majority & group2_has_min2)
+    tmp_combine <- tmp_combine_orig[keep_rows, ]
+
 
     # EdgeR object
     d0 <- DGEList(tmp_combine)

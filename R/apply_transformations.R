@@ -2,12 +2,12 @@
 # Post: Transformation: accept transformation -- "remove0", "libnorm", "log2p1", "minmaxnorm", "sqrt", "sqrt_minmaxnorm", "qnorm".
 # Parameter: df: Data frame used for transformation
 #            libnorm_type1: Type of library normalization ("libnorm", "libnorm-mean", "libnorm-median")
-#            transformations: Vector of transformation steps to apply
+#            transformations: Vector of transformation steps to apply, default to ("remove0", "libnorm", "log2p1", "qnorm")
 #            save_each_step: Boolean flag to save intermediate results after each transformation
 #            save_dir: Folder path for saving output files
 #            datasetName_full: Output file name prefix
 # Output: a step/overall transformed df and save.
-apply_transformations <- function(df, libnorm_type1 = "libnorm", transformations = c("remove0", "libnorm", "log2p1", "qnorm"), save_each_step = TRUE, save_dir, datasetName_full) {
+apply_transformations <- function(df, libnorm_type1 = "libnorm", transformations = NULL, save_each_step = TRUE, save_dir, datasetName_full) {
   suppressPackageStartupMessages({
     library(arrow)
     library(tibble)
@@ -24,6 +24,10 @@ apply_transformations <- function(df, libnorm_type1 = "libnorm", transformations
   if (pos_colname %in% colnames(result)) {
     rownames(result) <- result[[pos_colname]]
     result <- result[, !colnames(result) %in% pos_colname]
+  }
+
+  if (is.null(transformations)) {
+    transformations <- c("remove0", "libnorm", "log2p1", "qnorm")
   }
 
   if (libnorm_type1 == "libnorm-mean") {
@@ -54,7 +58,6 @@ apply_transformations <- function(df, libnorm_type1 = "libnorm", transformations
       result <- sweep(result, 2, colSums(result), FUN = "/") * norm_scale_factor
 
       if (length(zero_cols_idx) > 0) {
-        # 创建一个包含所有原始列的数据框
         result_with_zeros <- data.frame(matrix(0, nrow = nrow(result), ncol = length(col_names)))
         colnames(result_with_zeros) <- col_names
         rownames(result_with_zeros) <- rownames(result)
