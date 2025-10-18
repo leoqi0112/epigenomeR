@@ -12,3 +12,57 @@ Description: A comprehensive R package for analyzing epigenomic data including C
     RNA-seq data for multi-omics comparisons.
 Encoding: UTF-8
 LazyData: true
+Depends: 
+    R (>= 4.0.0)
+Imports:
+    arrow,
+    BiocGenerics,
+    BiocParallel,
+    Biostrings,
+    BSgenome.Hsapiens.NCBI.GRCh38,
+    ChIPseeker,
+    circlize,
+    clue,
+    ComplexHeatmap,
+    cowplot,
+    data.table,
+    dplyr,
+    edgeR,
+    GenomicAlignments,
+    GenomicRanges,
+    ggExtra,
+    ggplot2,
+    ggpointdensity,
+    ggpubr,
+    ggrastr,
+    glue,
+    grid,
+    grDevices,
+    IRanges,
+    latex2exp,
+    limma,
+    matrixStats,
+    matrixTests,
+    mgcv,
+    plyranges,
+    preprocessCore,
+    R.utils,
+    readr,
+    Rsamtools,
+    rtracklayer,
+    S4Vectors,
+    sfsmisc,
+    stats,
+    svglite,
+    tibble,
+    tidyr,
+    tools,
+    utils,
+    viridis
+Suggests:
+    BiocManager,
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+biocViews: Epigenetics, ChIPSeq, Sequencing, DifferentialExpression, Normalization, QualityControl
+RoxygenNote: 7.2.3
