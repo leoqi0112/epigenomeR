@@ -1,9 +1,9 @@
 # differential -4
-# sample_names should exactly in order (rep1 then rep2)
+# sample_names should exactly in order (case_num then control_num)
 # Post: Summarize the number of significant differentially accessible regions across column clusters using limma-voom or t-test methods, providing counts of total, upregulated, and downregulated regions for each cluster and threshold combination.
-# Parameter: sample_names: Vector of sample names in exact order (first rep1 samples for condition1, then rep2 samples for condition2)
-#            rep1: Number of replicates in condition 1 (minimum 2)
-#            rep2: Number of replicates in condition 2 (minimum 2)
+# Parameter: sample_names: Vector of sample names in exact order (first case_num samples for condition1, then control_num samples for condition2)
+#            case_num: Number of replicates in condition 1 (minimum 2)
+#            control_num: Number of replicates in condition 2 (minimum 2)
 #            col_cluster_file: Path to TSV file containing column cluster assignments with 'label' and 'feature' columns
 #            wgc_file_path: Vector of paths to feather files containing count matrices for each sample
 #            sig_result_dir: Output directory where summary tables will be saved
@@ -14,12 +14,12 @@
 #            lowess_span: Span parameter for voom lowess fitting (default: 0.5)
 #            method_name_list: Vector of statistical methods to use ("limma" or "ttest", default: c("limma"))
 # Output: Saves TSV summary tables showing counts of significant, upregulated, and downregulated regions for each column cluster and parameter combination
-summary_sig_num <- function(sample_names, rep1, rep2, col_cluster_file, wgc_file_path, sig_result_dir, l2fc_thres = 0.5, mean_per_thres_list = c(0.25), fdr_thres_list = c(0.25), normalization_factor = 1E6, lowess_span = 0.5, method_name_list = c("limma")) {
-  if(rep1 < 2 || rep2 < 2){
+summary_sig_num <- function(sample_names, case_num, control_num, wgc_file_path, sig_result_dir, col_cluster_file = NULL, l2fc_thres = 0.5, mean_per_thres_list = c(0.25), fdr_thres_list = c(0.25), normalization_factor = 1E6, lowess_span = 0.5, method_name_list = c("limma")) {
+  if(case_num < 2 || control_num < 2){
     stop("Each condition must have at least 2 replicates.")
   }
-  if(length(sample_names) != (rep1+rep2)){
-    stop("Length of sample_names must equal rep1+rep2.")
+  if(length(sample_names) != (case_num+control_num)){
+    stop("Length of sample_names must equal case_num+control_num.")
   }
 
   # load libraries
@@ -34,15 +34,29 @@ summary_sig_num <- function(sample_names, rep1, rep2, col_cluster_file, wgc_file
     library(dplyr)
   })
 
-  group1 <- sample_names[1:rep1]
-  group2 <- sample_names[(rep1+1):(rep1+rep2)]
-  conditions <- c(rep("condition1", rep1), rep("condition2", rep2))
+  group1 <- sample_names[1:case_num]
+  group2 <- sample_names[(case_num+1):(case_num+control_num)]
+  conditions <- c(rep("condition1", case_num), rep("condition2", control_num))
   coldata <- data.frame("condition"=conditions, row.names = sample_names)
   group <- factor(coldata$condition)
   condition_levels <- levels(group)
   mm <- model.matrix(~0 + group)
 
-  col_cluster <- read.table(col_cluster_file, header=TRUE, sep="\t", row.names=NULL)
+  # Handle column cluster file
+  if (is.null(col_cluster_file)) {
+    # Get all unique column names from all WGC files
+    all_features <- unique(unlist(lapply(wgc_list, colnames)))
+    # Create a data frame where each feature gets its own label
+    col_cluster <- data.frame(
+      feature = all_features,
+      label = seq_along(all_features),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    # Load column cluster file
+    col_cluster <- read.table(col_cluster_file, header = TRUE, sep = "\t", row.names = NULL)
+  }
+
   col_label_list <- unique(col_cluster$label)
 
   wgc_list <- lapply(wgc_file_path, function(f) column_to_rownames(read_feather(f), var="pos"))

@@ -14,7 +14,7 @@
 #            font_size: Font size for various text elements (default: 50)
 #            target_pair_mapping_df_path: Path to target name mapping file, or NULL for no mapping
 # Output: Saves PDF heatmap files for each cluster showing log2 expression values with blue-white-red color scheme, organized by sample groups
-plot_diff_heatmaps <- function(sample_names, col_cluster_file, wgc_file_path = NULL, sig_result_dir, cluster_idx_list = c(1:8, 10:15), show_heatmap_legend = "off", show_colnames = "off", col_size_coef = 20, colnames_fontsize = 10, width_base = 8, random_seed = 42, font_size = 50, target_pair_mapping_df_path = NULL) {
+plot_diff_heatmaps <- function(sample_names, sig_result_dir, col_cluster_file = NULL, wgc_file_path = NULL, cluster_idx_list = NULL, show_heatmap_legend = "off", show_colnames = "off", col_size_coef = 20, colnames_fontsize = 10, width_base = 8, random_seed = 42, font_size = 50, target_pair_mapping_df_path = NULL) {
 
   # Load libraries
   suppressPackageStartupMessages({
@@ -31,7 +31,25 @@ plot_diff_heatmaps <- function(sample_names, col_cluster_file, wgc_file_path = N
 
   dir.create(sig_result_dir, recursive = TRUE, showWarnings = FALSE)
 
-  col_cluster_full <- read.table(col_cluster_file, header = TRUE, sep = "\t", row.names = NULL)
+  # Handle column cluster file
+  if (is.null(col_cluster_file)) {
+    # Get all unique column names from all WGC files
+    all_features <- unique(unlist(lapply(wgc_list, colnames)))
+    # Create a data frame where each feature gets its own label
+    col_cluster_full <- data.frame(
+      feature = all_features,
+      label = seq_along(all_features),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    # Load column cluster file
+    col_cluster_full <- read.table(col_cluster_file, header = TRUE, sep = "\t", row.names = NULL)
+  }
+
+  if (is.null(cluster_idx_list)) {
+    cluster_idx_list <- sort(unique(col_cluster_full$label))
+    message(glue("cluster_idx_list not specified. Using all unique labels from column cluster file: {paste(cluster_idx_list, collapse=', ')}"))
+  }
 
   for (cluster_idx in cluster_idx_list) {
 

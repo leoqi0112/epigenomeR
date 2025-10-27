@@ -1,9 +1,9 @@
 # differential -5
 # Post: Generate log10-scaled barplot visualization of significant region counts showing upregulated and downregulated regions across column clusters with original count labels and pseudo-log transformation for better visualization of wide dynamic ranges.
 # Parameter: result_file_path: Path to TSV file containing summary statistics with columns 'column_cluster', 'up', and 'down' (output from summary_sig_num function)
-#            save_dir: Output directory where the barplot PDF will be saved
+#            sig_result_dir: Output directory where the barplot PDF will be saved
 # Output: Saves PDF barplot with log10-transformed y-axis showing upregulated regions (red, positive) and downregulated regions (blue, negative) for each column cluster, with original count values as text labels and pseudo-log scale for enhanced readability.
-summary_sig_num_log10_barplot_single_case <- function(result_file_path, save_dir) {
+summary_sig_num_log10_barplot_single_case <- function(result_file_path, sig_result_dir) {
   # load libraries
   suppressPackageStartupMessages({
     library(glue)
@@ -12,7 +12,7 @@ summary_sig_num_log10_barplot_single_case <- function(result_file_path, save_dir
     library(ggplot2)
   })
 
-  dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
+  dir.create(sig_result_dir, recursive = TRUE, showWarnings = FALSE)
 
   result_table <- read.table(result_file_path, header=TRUE, sep="\t")
 
@@ -101,6 +101,6 @@ summary_sig_num_log10_barplot_single_case <- function(result_file_path, save_dir
     )
 
   result_figure_filename <- paste0(basename(tools::file_path_sans_ext(result_file_path)), "_log.pdf")
-  result_figure_dir_filename <- file.path(save_dir, result_figure_filename)
+  result_figure_dir_filename <- file.path(sig_result_dir, result_figure_filename)
   ggsave(result_figure_dir_filename, result_figure, bg = "transparent", width = 8, height = 5)
 }

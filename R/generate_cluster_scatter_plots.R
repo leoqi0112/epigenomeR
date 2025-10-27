@@ -3,8 +3,8 @@
 # Parameter: rnaseq_file_path: Path to CSV file containing RNA-seq differential expression results with gene IDs as row names
 #            promoter_file_path: Path to TSV file containing promoter annotations with genomic coordinates and gene information
 #            load_dir: Directory containing feather files with limma differential analysis results for each cluster
-#            save_dir: Output directory where scatter plots and summary tables will be saved
-#            cluster_id_list: Vector of cluster IDs to process (default: c(1:8, 10:15))
+#            sig_result_dir: Output directory where scatter plots and summary tables will be saved
+#            cluster_idx_list: Vector of cluster IDs to process (default: all cluster)
 #            nearest_dist_cutoff: Maximum distance in bp for mapping genomic bins to promoters (default: 5000)
 #            l2fc_thres: Log2 fold change threshold for defining significant changes (default: 0.5)
 #            ylim_top: Upper limit for y-axis (RNA-seq log2FC) in scatter plots (default: 7)
@@ -12,7 +12,7 @@
 #            xlim_top: Upper limit for x-axis (genomic bin logFC) in scatter plots (default: 3)
 #            xlim_bottom: Lower limit for x-axis (genomic bin logFC) in scatter plots (default: -3)
 # Output: Saves scatter plots as PDF files and TSV summary tables showing quadrant analysis of concordant/discordant changes, with Fisher's exact test results for each cluster
-generate_cluster_scatter_plots <- function(rnaseq_file_path, promoter_file_path, load_dir, save_dir,  cluster_id_list = c(1:8, 10:15), nearest_dist_cutoff = 5000, l2fc_thres = 0.5, ylim_top = 7, ylim_bottom = -4, xlim_top = 3, xlim_bottom = -3) {
+generate_cluster_scatter_plots <- function(rnaseq_file_path, promoter_file_path, load_dir, sig_result_dir,  cluster_idx_list = NULL, nearest_dist_cutoff = 5000, l2fc_thres = 0.5, ylim_top = 7, ylim_bottom = -4, xlim_top = 3, xlim_bottom = -3) {
   # load libraries
   suppressPackageStartupMessages({
     library(arrow)
@@ -29,7 +29,7 @@ generate_cluster_scatter_plots <- function(rnaseq_file_path, promoter_file_path,
     library(circlize)
   })
 
-  dir.create(save_dir, recursive = TRUE, showWarnings = FALSE)
+  dir.create(sig_result_dir, recursive = TRUE, showWarnings = FALSE)
 
   # load RNA-seq results
   rnaseq_raw <- read.table(rnaseq_file_path, sep = ",", header = TRUE, check.names = FALSE, row.names = 1)
@@ -45,7 +45,12 @@ generate_cluster_scatter_plots <- function(rnaseq_file_path, promoter_file_path,
     strand.field = "strand", keep.extra.columns = TRUE
   )
 
-  for (cluster_id in cluster_id_list) {
+  if (is.null(cluster_idx_list)) {
+    cluster_idx_list <- sort(unique(col_cluster_full$label))
+    message(glue("cluster_idx_list not specified. Using all unique labels from column cluster file: {paste(cluster_idx_list, collapse=', ')}"))
+  }
+
+  for (cluster_id in cluster_idx_list) {
     message(glue("Processing cluster {cluster_id}..."))
 
     file_name <- glue("result_post-limmanorm_post-filter-one_condition_nonzero-2_rowmean-0.25_column_cluster-{cluster_id}_limma.feather")
@@ -100,7 +105,7 @@ generate_cluster_scatter_plots <- function(rnaseq_file_path, promoter_file_path,
 
     df_to_draw_clean <- df_to_draw[!is.na(df_to_draw$quadrant), ]
     write.table(df_to_draw_clean,
-                file.path(save_dir, glue("result_merge_bins_column_cluster-{cluster_id}_{nearest_dist_cutoff}_l2fc-{l2fc_thres}.tsv")),
+                file.path(sig_result_dir, glue("result_merge_bins_column_cluster-{cluster_id}_{nearest_dist_cutoff}_l2fc-{l2fc_thres}.tsv")),
                 sep = "\t", quote = FALSE, row.names = FALSE)
 
     # fisher test for Q1+Q4 vs Q2+Q3
@@ -134,7 +139,7 @@ generate_cluster_scatter_plots <- function(rnaseq_file_path, promoter_file_path,
             axis.title = element_text(size = 18))
 
     scatter_plot_filename <- glue("scatter_{cluster_id}_{nearest_dist_cutoff}_l2fc-{l2fc_thres}.pdf")
-    ggsave(file.path(save_dir, scatter_plot_filename), plot = p, width = 8/1.5, height = 8/1.5, bg = "transparent")
+    ggsave(file.path(sig_result_dir, scatter_plot_filename), plot = p, width = 8/1.5, height = 8/1.5, bg = "transparent")
   }
 
   message("Finished all clusters.")

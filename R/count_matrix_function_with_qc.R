@@ -10,7 +10,7 @@
 #            do_qc: Whether to perform quality control filtering on BAM files.
 #            qc_filtered_percentile: Percentile threshold for QC filtering.
 # Output: None (saves count matrix and transformed data to files).
-count_matrix_function_with_qc <- function(bam_path, regions, libnorm_type = "libnorm", apply_transformation = TRUE, transformations = NULL, save_each_step = TRUE, save_dir, datasetName_full = NULL, do_qc = FALSE, qc_filtered_percentile = 0.25) {
+count_matrix_function_with_qc <- function(bam_path, regions, save_dir, libnorm_type = "libnorm", apply_transformation = TRUE, transformations = NULL, save_each_step = TRUE, datasetName_full = NULL, do_qc = FALSE, qc_filtered_percentile = 0.25) {
   # Create folder
   if (!dir.exists(save_dir)) {
     dir.create(save_dir, recursive = TRUE)
@@ -97,60 +97,57 @@ count_matrix_function_with_qc <- function(bam_path, regions, libnorm_type = "lib
 
   # Post: Use bplapply for parallel chromosome processing
   #       Generate Count Matrix for each chr
-  binChriDataframe_list <- bplapply(chr_list, function(chr_i) {
-    if (use_custom_region) {
-      ext <- tools::file_ext(region_path)[1]
-      if (length(region_path) == 1 && all(ext != "bed")) {
-        chrSizei <- chrSizes[chr_i]
-        region_chr <- region_df[region_df$seqnames == chr_i, ]
-        bin <- GRanges(seqnames = region_chr$seqnames,
-                       ranges = IRanges(start = region_chr$start, end = region_chr$end),
-                       strand = region_chr$strand)
-        binChriDataframe <- as.data.frame(bin)[, c("start", "end")]
+  # Process custom regions (no chromosome loop needed)
+  if (use_custom_region) {
+    ext <- tools::file_ext(region_path)[1]
+
+    # Handle CSV/GTF files
+    if (length(region_path) == 1 && all(ext != "bed")) {
+      bin <- GRanges(seqnames = region_df$seqnames,
+                     ranges = IRanges(start = region_df$start, end = region_df$end),
+                     strand = region_df$strand)
+      binChriDataframe <- as.data.frame(bin)[, c("seqnames", "start", "end")]
+      colnames(binChriDataframe)[1] <- "CHR"
+
+      if (!all(grepl("^chr", seqlevels(bin)))) {
         seqlevels(bin) <- paste0("chr", seqlevels(bin))
-
-        if ("gene_id" %in% colnames(region_chr)) {
-          binChriDataframe$gene_id <- region_chr$gene_id
-        }
-        chr_df <- data.frame(CHR = paste0("chr", names(chrSizei)), stringsAsFactors = FALSE)
-        binChriDataframe <- cbind(chr_df, binChriDataframe)
-      }  else if (length(region_path) >= 1 && all(ext == "bed")) {
-        chrSizei <- chrSizes[chr_i]
-        gr_list <- lapply(region_path, function(p) {
-          bed_data <- read.table(p, sep = "\t", stringsAsFactors = FALSE)
-
-          if (ncol(bed_data) < 6) {
-            bed_data$V6 <- "."
-          }
-          bed_data$V6[!bed_data$V6 %in% c("+", "-", ".")] <- "*"
-
-          GRanges(
-            seqnames = bed_data$V1,
-            ranges = IRanges(
-              start = bed_data$V2 + 1,  # BED is 0-based，GRanges is 1-based
-              end = bed_data$V3
-            ),
-            strand = ifelse(bed_data$V6 == ".", "*", bed_data$V6)  # "." to "*"
-          )
-        })
-        bin <- reduce(do.call("c", gr_list))
-        binChriDataframe <- as.data.frame(bin)[, c("start", "end")]
-        seqlevels(bin) <- paste0("chr", seqlevels(bin))
-
-        chr_df <- data.frame(CHR = paste0("chr", names(chrSizei)), stringsAsFactors = FALSE)
-        binChriDataframe <- cbind(chr_df, binChriDataframe)
+        binChriDataframe$CHR <- paste0("chr", binChriDataframe$CHR)
       }
-    } else {
-      chrSizei <- chrSizes[chr_i]
-      bin <- tileGenome(chrSizei, tilewidth=BINSIZE, cut.last.tile.in.chrom=TRUE)
-      binChriDataframe <- as.data.frame(bin)[, c("start", "end")]
-      seqlevels(bin) <- paste0("chr", seqlevels(bin))
 
-      chr_df <- data.frame(CHR = paste0("chr", names(chrSizei)), stringsAsFactors = FALSE)
-      binChriDataframe <- cbind(chr_df, binChriDataframe)
+      if ("gene_id" %in% colnames(region_df)) {
+        binChriDataframe$gene_id <- region_df$gene_id
+      }
+    }
+    # Handle BED files
+    else if (length(region_path) >= 1 && all(ext == "bed")) {
+      gr_list <- lapply(region_path, function(p) {
+        bed_data <- read.table(p, sep = "\t", stringsAsFactors = FALSE)
+
+        if (ncol(bed_data) < 6) {
+          bed_data$V6 <- "."
+        }
+        bed_data$V6[!bed_data$V6 %in% c("+", "-", ".")] <- "*"
+
+        GRanges(
+          seqnames = bed_data$V1,
+          ranges = IRanges(
+            start = bed_data$V2 + 1,  # BED is 0-based, GRanges is 1-based
+            end = bed_data$V3
+          ),
+          strand = ifelse(bed_data$V6 == ".", "*", bed_data$V6)
+        )
+      })
+      bin <- reduce(do.call("c", gr_list))
+      binChriDataframe <- as.data.frame(bin)[, c("seqnames", "start", "end")]
+      colnames(binChriDataframe)[1] <- "CHR"
+
+      if (!all(grepl("^chr", seqlevels(bin)))) {
+        seqlevels(bin) <- paste0("chr", seqlevels(bin))
+        binChriDataframe$CHR <- paste0("chr", binChriDataframe$CHR)
+      }
     }
 
-
+    # Process BAM files for custom regions
     for (k in seq_along(bamFiles)) {
       bamFile <- bamFiles[k]
       temp <- readGAlignmentPairs(bamFile)
@@ -176,24 +173,68 @@ count_matrix_function_with_qc <- function(bam_path, regions, libnorm_type = "lib
       binChriDataframe[[bamName]] <- overlapCount
     }
 
-    if (use_custom_region && length(region_path) == 1) {
+    # Format output
+    if (length(region_path) == 1 && ("gene_id" %in% colnames(binChriDataframe))) {
       tmp_pos <- binChriDataframe[, c("CHR", "start", "end", "gene_id")]
       tmp_pos$pos <- tmp_pos$gene_id
       pos_df <- data.frame(pos = tmp_pos$pos)
       tmp_wgc <- binChriDataframe[, !(names(binChriDataframe) %in% c("CHR", "start", "end", "gene_id"))]
-      binChriDataframe_final <- cbind(pos_df, tmp_wgc)
+      binChriDataframe_full <- cbind(pos_df, tmp_wgc)
     } else {
       tmp_pos <- binChriDataframe[, c("CHR", "start", "end")]
       tmp_pos$pos <- paste0(tmp_pos$CHR, "_", tmp_pos$start, "_", tmp_pos$end)
       pos_df <- data.frame(pos = tmp_pos$pos)
       tmp_wgc <- binChriDataframe[, !(names(binChriDataframe) %in% c("CHR", "start", "end"))]
-      binChriDataframe_final <- cbind(pos_df, tmp_wgc)
+      binChriDataframe_full <- cbind(pos_df, tmp_wgc)
     }
 
-    return(binChriDataframe_final)
-  })
+  } else {
+    # Process fixed bins with parallel chromosome processing
+    binChriDataframe_list <- bplapply(chr_list, function(chr_i) {
+      chrSizei <- chrSizes[chr_i]
+      bin <- tileGenome(chrSizei, tilewidth=BINSIZE, cut.last.tile.in.chrom=TRUE)
+      binChriDataframe <- as.data.frame(bin)[, c("start", "end")]
+      seqlevels(bin) <- paste0("chr", seqlevels(bin))
 
-  binChriDataframe_full = as.data.frame(do.call(rbind, binChriDataframe_list))
+      chr_df <- data.frame(CHR = paste0("chr", names(chrSizei)), stringsAsFactors = FALSE)
+      binChriDataframe <- cbind(chr_df, binChriDataframe)
+
+      for (k in seq_along(bamFiles)) {
+        bamFile <- bamFiles[k]
+        temp <- readGAlignmentPairs(bamFile)
+        locus <- data.frame(first_start = start(temp@first),
+                            first_end = end(temp@first),
+                            last_start = start(temp@last),
+                            last_end = end(temp@last))
+        strand <- '*'
+
+        if (nrow(locus) == 0) {
+          bamContent <- GRanges()
+        } else {
+          start <- rowMin(as.matrix(locus))
+          end <- rowMax(as.matrix(locus))
+          mid <- ceiling((start + end) / 2)
+          bamContent <- makeGRangesFromDataFrame(data.frame(
+            seqnames = as.vector(seqnames(temp)), strand = strand,
+            start = mid, end = mid))
+        }
+
+        overlapCount <- countOverlaps(bin, bamContent)
+        bamName <- tools::file_path_sans_ext(basename(bamFile))
+        binChriDataframe[[bamName]] <- overlapCount
+      }
+
+      tmp_pos <- binChriDataframe[, c("CHR", "start", "end")]
+      tmp_pos$pos <- paste0(tmp_pos$CHR, "_", tmp_pos$start, "_", tmp_pos$end)
+      pos_df <- data.frame(pos = tmp_pos$pos)
+      tmp_wgc <- binChriDataframe[, !(names(binChriDataframe) %in% c("CHR", "start", "end"))]
+      binChriDataframe_final <- cbind(pos_df, tmp_wgc)
+
+      return(binChriDataframe_final)
+    })
+
+    binChriDataframe_full <- as.data.frame(do.call(rbind, binChriDataframe_list))
+  }
 
   if (is.null(datasetName_full)) {
     if (is.numeric(regions)) {

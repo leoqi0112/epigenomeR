@@ -1,28 +1,26 @@
-# Differential Analysis
 # differential -1
 # two condition, 4 columns
 # Post: Perform differential analysis between two conditions using limma-voom pipeline, analyzing each column cluster separately to identify significantly different genomic regions.
-# Parameter: sample_names: Vector of sample names in order (first rep1 samples for condition1, then rep2 samples for condition2)
-#            rep1: Number of replicates in condition 1 (minimum 2) --- case_num
-#            rep2: Number of replicates in condition 2 (minimum 2) --- control_num
+# Parameter: sample_names: Vector of sample names in order (first case_num samples for condition1, then control_num samples for condition2)
+#            case_num: Number of replicates in condition 1 (minimum 2)
+#            control_num: Number of replicates in condition 2 (minimum 2)
 #            col_cluster_file: Path to column cluster assignment TSV file
 #            wgc_file_path: Vector of paths to count matrix feather files for each sample
 #            sig_result_dir: Directory to save differential analysis results
 #            pseudocount: Pseudocount for normalization (default: 0.5)
 #            normalization_factor: Scaling factor for CPM calculation (default: 1E6)
-#            pseudocount_for_log: Pseudocount for log transformation (default: 1)
 #            lowess_span: Span parameter for voom lowess fitting (default: 0.5)
 #            l2fc_thres: Log2 fold change threshold for significance (default: 0.5)
 #            mean_per_thres_list: Vector of mean expression percentile thresholds for filtering (default: c(0.25))
 #            fdr_thres_list: Vector of FDR thresholds for significance calling (default: c(0.25))
 # Output: Saves differential analysis results, filtered count matrices, and significant regions for each cluster and threshold combination
-limma_column_cluster_differential_regions <- function(sample_names, rep1, rep2, col_cluster_file = NULL, wgc_file_path, sig_result_dir, normalization_factor = 1E6, lowess_span = 0.5, l2fc_thres = 0.5, mean_per_thres_list = c(0.25), fdr_thres_list = c(0.25)) { # cluster
+limma_column_cluster_differential_regions <- function(sample_names, case_num, control_num, wgc_file_path, sig_result_dir, col_cluster_file = NULL, normalization_factor = 1E6, lowess_span = 0.5, l2fc_thres = 0.5, mean_per_thres_list = c(0.25), fdr_thres_list = c(0.25)) { # cluster
 
-  if(rep1 < 2 || rep2 < 2){
+  if(case_num < 2 || control_num < 2){
     stop("Each condition must have at least 2 replicates.")
   }
-  if(length(sample_names) != (rep1+rep2)){
-    stop("Length of sample_names must equal rep1+rep2.")
+  if(length(sample_names) != (case_num+control_num)){
+    stop("Length of sample_names must equal case_num+control_num.")
   }
 
   # load libraries
@@ -36,9 +34,9 @@ limma_column_cluster_differential_regions <- function(sample_names, rep1, rep2, 
     library(limma)
   })
 
-  group1 <- sample_names[1:rep1]
-  group2 <- sample_names[(rep1+1):(rep1+rep2)]
-  conditions <- c(rep("condition1", rep1), rep("condition2", rep2))
+  group1 <- sample_names[1:case_num]
+  group2 <- sample_names[(case_num+1):(case_num+control_num)]
+  conditions <- c(rep("condition1", case_num), rep("condition2", control_num))
   coldata <- data.frame("condition" = conditions, row.names = sample_names)
   group <- factor(coldata$condition)
   condition_levels <- levels(group)
@@ -116,8 +114,8 @@ limma_column_cluster_differential_regions <- function(sample_names, rep1, rep2, 
     group2_nonzero_count <- rowSums(tmp_combine_orig[, group2] != 0)
 
     # Condition a: more than 50% non-zero in at least one group
-    group1_has_majority <- group1_nonzero_count > (rep1 * 0.5)
-    group2_has_majority <- group2_nonzero_count > (rep2 * 0.5)
+    group1_has_majority <- group1_nonzero_count > (case_num * 0.5)
+    group2_has_majority <- group2_nonzero_count > (control_num * 0.5)
 
     # Condition b: at least 2 non-zero in at least one group
     group1_has_min2 <- group1_nonzero_count >= 2
