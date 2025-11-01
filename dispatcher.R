@@ -20,8 +20,6 @@ subparsers <- parser$add_subparsers(dest = "command", help = "Available commands
 # Global arguments
 parser$add_argument("--threads", type = "integer", default = NA,
                     help = "Number of threads (overrides SLURM_CPUS_PER_TASK if set).")
-parser$add_argument("--helpers", type = "character", default = NULL,
-                    help = "Optional helpers R file to source() (qc(), apply_transformations(), etc.).")
 parser$add_argument("--verbose", default = "TRUE",
                     help = "Verbose output (TRUE/FALSE)")
 
@@ -54,11 +52,6 @@ args <- parser$parse_args()
 # Set threads if specified
 if (!is.na(args$threads)) {
   Sys.setenv(SLURM_CPUS_PER_TASK = args$threads)
-}
-
-# Source optional helpers file
-if (!is.null(args$helpers) && file.exists(args$helpers)) {
-  source(args$helpers)
 }
 
 verbose <- truthy(args$verbose)
