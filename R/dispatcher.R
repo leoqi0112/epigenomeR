@@ -6,6 +6,8 @@ suppressPackageStartupMessages({
 
 # Source all function modules
 source("R/count_matrix_function_with_qc.R")
+source("R/qc.R")
+source("R/apply_transformations.R")
 
 truthy <- function(x) { tolower(as.character(x)) %in% c("t","true","1","yes","y") }
 # ============================================================================
