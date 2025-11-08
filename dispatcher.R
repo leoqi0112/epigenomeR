@@ -68,7 +68,7 @@ if (is.null(args$command)) {
 tryCatch({
   
   if (args$command == "count-matrix") {
-    source("R/handlers/count_matrix_handler.R")
+    source("R/handler/count_matrix_handler.R")
     handle_count_matrix(args, verbose)
   } else {
     stop(paste("Unknown command:", args$command))
